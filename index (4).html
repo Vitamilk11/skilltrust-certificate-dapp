@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SkillTrust Academy – ระบบออกและตรวจสอบใบรับรองดิจิทัล</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f4f6fb;--card:#fff;--ink:#1c2333;--mute:#667085;--line:#e3e7ef;--brand:#1f4fd1;--ok:#11845b;--bad:#c4321c;--warn:#b26b00}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Sarabun',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
+  header{background:var(--ink);color:#fff;padding:16px 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+  header h1{font-size:18px;margin:0}
+  header small{color:#aab3c5;display:block;font-weight:400}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .bar input{width:360px;max-width:60vw}
+  main{max-width:980px;margin:0 auto;padding:20px}
+  nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  nav button{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  nav button.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+  section{display:none}
+  section.active{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px}
+  .card h2{margin:0 0 4px;font-size:17px}
+  .card p.hint{margin:0 0 14px;color:var(--mute);font-size:13.5px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid .full{grid-column:1/-1}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
+  input,textarea,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;background:#fff}
+  textarea{min-height:64px}
+  button{padding:9px 16px;border-radius:7px;border:0;background:var(--brand);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  button.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  button.danger{background:var(--bad)}
+  button:disabled{opacity:.5;cursor:default}
+  .row{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:12px}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;word-break:break-all}
+  .badge{display:inline-block;padding:3px 10px;border-radius:99px;font-weight:700;font-size:13px}
+  .b-ok{background:#e3f5ec;color:var(--ok)} .b-bad{background:#fbe7e3;color:var(--bad)} .b-warn{background:#fdf1dc;color:var(--warn)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mute);font-weight:600;font-size:12.5px}
+  #log{position:fixed;right:16px;bottom:16px;max-width:420px;background:var(--ink);color:#fff;padding:10px 14px;border-radius:8px;font-size:13.5px;display:none;white-space:pre-wrap}
+  .result{margin-top:14px}
+  .qrbox{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  #reader{max-width:360px}
+  @media(max-width:700px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>SkillTrust Academy · Digital Certificate<small>ระบบออกและตรวจสอบใบรับรองดิจิทัลบน Ethereum</small></h1></div>
+  <div class="bar">
+    <input id="contractAddr" placeholder="Contract address (0x…) จาก Remix">
+    <button id="btnConnect">เชื่อมต่อ Wallet</button>
+    <span id="acct" class="mono" style="color:#cfd6e4"></span>
+  </div>
+</header>
+
+<main>
+  <nav>
+    <button data-tab="verify" class="active">ตรวจสอบใบรับรอง</button>
+    <button data-tab="dashboard">ใบรับรองของฉัน</button>
+    <button data-tab="issue">ออกใบรับรอง</button>
+    <button data-tab="revoke">เพิกถอน</button>
+    <button data-tab="admin">ผู้ดูแลระบบ</button>
+  </nav>
+
+  <!-- 4. Verify -->
+  <section id="verify" class="active">
+    <div class="card">
+      <h2>ตรวจสอบความถูกต้อง (Verify Certificate)</h2>
+      <p class="hint">ค้นหาด้วยรหัสใบรับรอง หรือสแกน QR Code บนใบรับรอง แนบไฟล์ PDF เพื่อตรวจว่าเอกสารไม่ถูกแก้ไข (ไม่บังคับ)</p>
+      <div class="grid">
+        <div><label>รหัสใบรับรอง</label><input id="vId" placeholder="เช่น ST-2026-0001"></div>
+        <div><label>ไฟล์ PDF ใบรับรอง (ไม่บังคับ)</label><input id="vFile" type="file" accept="application/pdf"></div>
+        <div class="full"><label>ชื่อ-นามสกุลผู้รับ (ไม่บังคับ – ใช้ตรวจว่าเป็นของผู้สมัครจริง)</label><input id="vName" placeholder="พิมพ์ให้ตรงกับที่พิมพ์บนใบรับรอง"></div>
+      </div>
+      <div class="row">
+        <button id="btnVerify">ตรวจสอบ</button>
+        <button class="ghost" id="btnScan">สแกน QR Code</button>
+      </div>
+      <div id="reader"></div>
+      <div id="vResult" class="result"></div>
+    </div>
+  </section>
+
+  <!-- 6. Dashboard -->
+  <section id="dashboard">
+    <div class="card">
+      <h2>ประวัติใบรับรอง (Certificate Dashboard)</h2>
+      <p class="hint">แสดงใบรับรองทั้งหมดที่ผูกกับ Wallet ที่เชื่อมต่ออยู่</p>
+      <button id="btnDash">โหลดใบรับรองของฉัน</button>
+      <div id="dResult" class="result"></div>
+    </div>
+  </section>
+
+  <!-- 2 + 3. Issue -->
+  <section id="issue">
+    <div class="card">
+      <h2>ออกใบรับรอง (Issue Certificate)</h2>
+      <p class="hint">เฉพาะ Issuer ที่ได้รับสิทธิ์ ระบบจะคำนวณ Hash ของไฟล์ PDF และ Hash ของข้อมูลผู้รับในเบราว์เซอร์ แล้วส่งขึ้นเชนเฉพาะ Hash – ไม่มีชื่อหรือข้อมูลส่วนบุคคลขึ้น Blockchain</p>
+      <div class="grid">
+        <div><label>รหัสใบรับรอง (ต้องไม่ซ้ำ)</label><input id="iId" placeholder="ST-2026-0001"></div>
+        <div><label>หลักสูตร</label><select id="iCourse"><option value="">— โหลดหลักสูตร —</option></select></div>
+        <div><label>ชื่อ-นามสกุลผู้รับ (ไม่ขึ้นเชน)</label><input id="iName"></div>
+        <div><label>Wallet ผู้รับ</label><input id="iWallet" placeholder="0x…"></div>
+        <div class="full"><label>ไฟล์ PDF ใบรับรอง</label><input id="iFile" type="file" accept="application/pdf"></div>
+      </div>
+      <div class="row"><button id="btnIssue">ออกใบรับรอง</button><button class="ghost" id="btnLoadCourses">รีโหลดหลักสูตร</button></div>
+      <div id="iResult" class="result"></div>
+    </div>
+  </section>
+
+  <!-- 5. Revoke -->
+  <section id="revoke">
+    <div class="card">
+      <h2>เพิกถอนใบรับรอง (Revoke Certificate)</h2>
+      <p class="hint">เฉพาะ Admin / Issuer ใบรับรองจะถูกทำเครื่องหมายว่าเพิกถอน แต่ประวัติการออกยังอยู่ครบ</p>
+      <div class="grid">
+        <div><label>รหัสใบรับรอง</label><input id="rId"></div>
+        <div><label>เหตุผล</label><input id="rReason" placeholder="เช่น ออกผิดพลาด / ทุจริต"></div>
+      </div>
+      <div class="row"><button class="danger" id="btnRevoke">เพิกถอน</button></div>
+    </div>
+  </section>
+
+  <!-- 1. Admin -->
+  <section id="admin">
+    <div class="card">
+      <h2>ลงทะเบียนหลักสูตร (Create Training Course)</h2>
+      <p class="hint">เฉพาะผู้ดูแลระบบ</p>
+      <div class="grid">
+        <div><label>รหัสหลักสูตร</label><input id="cCode" placeholder="AI-101"></div>
+        <div><label>ชื่อหลักสูตร</label><input id="cName" placeholder="AI Fundamentals"></div>
+        <div class="full"><label>รายละเอียดการอบรม</label><textarea id="cDesc"></textarea></div>
+        <div><label>จำนวนชั่วโมง</label><input id="cHours" type="number" value="30"></div>
+      </div>
+      <div class="row"><button id="btnCourse">สร้างหลักสูตร</button></div>
+    </div>
+    <div class="card">
+      <h2>หลักสูตรทั้งหมด</h2>
+      <button class="ghost" id="btnListCourses">โหลดรายการ</button>
+      <div id="cList" class="result"></div>
+    </div>
+    <div class="card">
+      <h2>จัดการสิทธิ์ผู้ออกใบรับรอง (Issuer)</h2>
+      <div class="grid">
+        <div><label>Wallet</label><input id="aWallet" placeholder="0x…"></div>
+        <div><label>สิทธิ์</label><select id="aEnable"><option value="true">ให้สิทธิ์</option><option value="false">ยกเลิกสิทธิ์</option></select></div>
+      </div>
+      <div class="row"><button id="btnIssuer">บันทึก</button></div>
+    </div>
+  </section>
+  <!-- สมาชิกกลุ่ม: แก้ชื่อและรหัสนักศึกษาตรงนี้ -->
+  <div class="card">
+    <h2>สมาชิกกลุ่ม</h2>
+    <table>
+      <tr><th>ลำดับ</th><th>ชื่อ-นามสกุล</th><th>รหัสนักศึกษา</th></tr>
+      <tr><td>1</td><td>ชื่อ-นามสกุล นายสิทธิภาพ โอสถ </td><td>รหัสนักศึกษา 66045650</td></tr>
+      <tr><td>2</td><td>ชื่อ-นามสกุล  อภิวิชญ์ สายแสน </td><td>รหัสนักศึกษา 66073816</td></tr>
+      <tr><td>3</td><td>ชื่อ-นามสกุล พงศธร เกิดแสง </td><td>รหัสนักศึกษา  66023481</td></tr>
+      <tr><td>4</td><td>ชื่อ-นามสกุล ณัฐภัทร มารวย</td><td>รหัสนักศึกษา 66053976</td></tr>
+      <tr><td>5</td><td>ชื่อ-นามสกุล จิระพัฒน์ เรืองหิรัญ</td><td>รหัสนักศึกษา 66048864</td></tr>
+    </table>
+  </div>
+</main>
+<div id="log"></div>
+
+<script>
+const ABI = [{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"account","type":"address"},{"indexed":false,"internalType":"bool","name":"enabled","type":"bool"}],"name":"AdminUpdated","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"string","name":"certId","type":"string"},{"indexed":false,"internalType":"string","name":"courseCode","type":"string"},{"indexed":true,"internalType":"address","name":"recipient","type":"address"},{"indexed":false,"internalType":"bytes32","name":"documentHash","type":"bytes32"},{"indexed":true,"internalType":"address","name":"issuer","type":"address"},{"indexed":false,"internalType":"uint256","name":"issuedAt","type":"uint256"}],"name":"CertificateIssued","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"string","name":"certId","type":"string"},{"indexed":false,"internalType":"string","name":"reason","type":"string"},{"indexed":true,"internalType":"address","name":"by","type":"address"},{"indexed":false,"internalType":"uint256","name":"revokedAt","type":"uint256"}],"name":"CertificateRevoked","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"string","name":"courseCode","type":"string"},{"indexed":false,"internalType":"string","name":"courseName","type":"string"},{"indexed":true,"internalType":"address","name":"by","type":"address"}],"name":"CourseCreated","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"string","name":"courseCode","type":"string"},{"indexed":false,"internalType":"bool","name":"active","type":"bool"}],"name":"CourseStatusChanged","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"account","type":"address"},{"indexed":false,"internalType":"bool","name":"enabled","type":"bool"}],"name":"IssuerUpdated","type":"event"},{"inputs":[{"internalType":"string","name":"courseCode","type":"string"},{"internalType":"string","name":"courseName","type":"string"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint16","name":"durationHours","type":"uint16"}],"name":"createCourse","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32","name":"documentHash","type":"bytes32"}],"name":"findByDocumentHash","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getAllCertIds","outputs":[{"internalType":"string[]","name":"","type":"string[]"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getAllCourseCodes","outputs":[{"internalType":"string[]","name":"","type":"string[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"recipient","type":"address"}],"name":"getCertificatesOf","outputs":[{"components":[{"internalType":"string","name":"certId","type":"string"},{"internalType":"string","name":"courseCode","type":"string"},{"internalType":"address","name":"recipient","type":"address"},{"internalType":"bytes32","name":"recipientHash","type":"bytes32"},{"internalType":"bytes32","name":"documentHash","type":"bytes32"},{"internalType":"uint256","name":"issuedAt","type":"uint256"},{"internalType":"address","name":"issuer","type":"address"},{"internalType":"bool","name":"revoked","type":"bool"},{"internalType":"uint256","name":"revokedAt","type":"uint256"},{"internalType":"string","name":"revokeReason","type":"string"},{"internalType":"bool","name":"exists","type":"bool"}],"internalType":"struct CertificateRegistry.Certificate[]","name":"list","type":"tuple[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"courseCode","type":"string"}],"name":"getCourse","outputs":[{"components":[{"internalType":"string","name":"courseCode","type":"string"},{"internalType":"string","name":"courseName","type":"string"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint16","name":"durationHours","type":"uint16"},{"internalType":"bool","name":"active","type":"bool"},{"internalType":"bool","name":"exists","type":"bool"},{"internalType":"uint256","name":"createdAt","type":"uint256"}],"internalType":"struct CertificateRegistry.Course","name":"","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getMyCertificates","outputs":[{"components":[{"internalType":"string","name":"certId","type":"string"},{"internalType":"string","name":"courseCode","type":"string"},{"internalType":"address","name":"recipient","type":"address"},{"internalType":"bytes32","name":"recipientHash","type":"bytes32"},{"internalType":"bytes32","name":"documentHash","type":"bytes32"},{"internalType":"uint256","name":"issuedAt","type":"uint256"},{"internalType":"address","name":"issuer","type":"address"},{"internalType":"bool","name":"revoked","type":"bool"},{"internalType":"uint256","name":"revokedAt","type":"uint256"},{"internalType":"string","name":"revokeReason","type":"string"},{"internalType":"bool","name":"exists","type":"bool"}],"internalType":"struct CertificateRegistry.Certificate[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"isAdmin","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"isIssuer","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"certId","type":"string"},{"internalType":"string","name":"courseCode","type":"string"},{"internalType":"address","name":"recipient","type":"address"},{"internalType":"bytes32","name":"recipientHash","type":"bytes32"},{"internalType":"bytes32","name":"documentHash","type":"bytes32"}],"name":"issueCertificate","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"certId","type":"string"},{"internalType":"string","name":"reason","type":"string"}],"name":"revokeCertificate","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"account","type":"address"},{"internalType":"bool","name":"enabled","type":"bool"}],"name":"setAdmin","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"string","name":"courseCode","type":"string"},{"internalType":"bool","name":"active","type":"bool"}],"name":"setCourseActive","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"account","type":"address"},{"internalType":"bool","name":"enabled","type":"bool"}],"name":"setIssuer","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"totalCertificates","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"certId","type":"string"}],"name":"verifyCertificate","outputs":[{"internalType":"enum CertificateRegistry.Status","name":"status","type":"uint8"},{"components":[{"internalType":"string","name":"certId","type":"string"},{"internalType":"string","name":"courseCode","type":"string"},{"internalType":"address","name":"recipient","type":"address"},{"internalType":"bytes32","name":"recipientHash","type":"bytes32"},{"internalType":"bytes32","name":"documentHash","type":"bytes32"},{"internalType":"uint256","name":"issuedAt","type":"uint256"},{"internalType":"address","name":"issuer","type":"address"},{"internalType":"bool","name":"revoked","type":"bool"},{"internalType":"uint256","name":"revokedAt","type":"uint256"},{"internalType":"string","name":"revokeReason","type":"string"},{"internalType":"bool","name":"exists","type":"bool"}],"internalType":"struct CertificateRegistry.Certificate","name":"cert","type":"tuple"},{"components":[{"internalType":"string","name":"courseCode","type":"string"},{"internalType":"string","name":"courseName","type":"string"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint16","name":"durationHours","type":"uint16"},{"internalType":"bool","name":"active","type":"bool"},{"internalType":"bool","name":"exists","type":"bool"},{"internalType":"uint256","name":"createdAt","type":"uint256"}],"internalType":"struct CertificateRegistry.Course","name":"course","type":"tuple"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"certId","type":"string"},{"internalType":"bytes32","name":"documentHash","type":"bytes32"}],"name":"verifyDocument","outputs":[{"internalType":"bool","name":"hashMatches","type":"bool"},{"internalType":"bool","name":"isValid","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"certId","type":"string"},{"internalType":"bytes32","name":"recipientHash","type":"bytes32"}],"name":"verifyRecipient","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}];
+const STATUS = ['ไม่พบในระบบ', 'ใช้งานได้ (Valid)', 'ถูกเพิกถอน (Revoked)'];
+let provider, signer, account;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate = ts => ts ? new Date(Number(ts) * 1000).toLocaleString('th-TH') : '-';
+let logTimer;
+function toast(msg, ms = 4500) { const l = $('log'); l.textContent = msg; l.style.display = 'block'; clearTimeout(logTimer); logTimer = setTimeout(() => l.style.display = 'none', ms); }
+function errMsg(e) { return e?.reason || e?.info?.error?.message || e?.shortMessage || e?.message || String(e); }
+
+// --- tabs ---
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button, section').forEach(x => x.classList.remove('active'));
+  b.classList.add('active'); $(b.dataset.tab).classList.add('active');
+});
+
+// --- config: contract address remembered + URL params (for QR) ---
+const params = new URLSearchParams(location.search);
+try { $('contractAddr').value = params.get('contract') || localStorage.getItem('certContract') || ''; } catch { $('contractAddr').value = params.get('contract') || ''; }
+$('contractAddr').onchange = () => { try { localStorage.setItem('certContract', $('contractAddr').value.trim()); } catch {} };
+
+function getContract(write = false) {
+  const addr = $('contractAddr').value.trim();
+  if (!ethers.isAddress(addr)) throw new Error('กรุณาใส่ Contract address ที่ถูกต้อง (คัดลอกจาก Remix หลัง Deploy)');
+  if (!provider) {
+    if (!window.ethereum) throw new Error('ไม่พบ MetaMask – กรุณาติดตั้ง MetaMask');
+    provider = new ethers.BrowserProvider(window.ethereum);
+  }
+  if (write && !signer) throw new Error('กรุณากด "เชื่อมต่อ Wallet" ก่อน');
+  return new ethers.Contract(addr, ABI, write ? signer : provider);
+}
+
+$('btnConnect').onclick = async () => {
+  try {
+    if (!window.ethereum) throw new Error('ไม่พบ MetaMask');
+    provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send('eth_requestAccounts', []);
+    signer = await provider.getSigner();
+    account = await signer.getAddress();
+    const net = await provider.getNetwork();
+    $('acct').textContent = account.slice(0, 6) + '…' + account.slice(-4) + ' · chain ' + net.chainId;
+    try {
+      const c = getContract();
+      const [a, i] = await Promise.all([c.isAdmin(account), c.isIssuer(account)]);
+      toast(`เชื่อมต่อแล้ว\nสิทธิ์: ${a ? 'Admin ' : ''}${i ? 'Issuer' : ''}${!a && !i ? 'ผู้ใช้ทั่วไป' : ''}`);
+    } catch { toast('เชื่อมต่อ Wallet แล้ว'); }
+  } catch (e) { toast('❌ ' + errMsg(e)); }
+};
+window.ethereum?.on?.('accountsChanged', () => location.reload());
+
+// --- hashing helpers (ทำในเบราว์เซอร์ ไม่อัปโหลดไฟล์ไปที่ใด) ---
+async function fileHash(input) {
+  const f = input.files[0]; if (!f) return null;
+  return ethers.keccak256(new Uint8Array(await f.arrayBuffer()));
+}
+const normName = n => n.trim().replace(/\s+/g, ' ').toLowerCase();
+// recipientHash = keccak256(ชื่อ | รหัสใบรับรอง) – รหัสใบรับรองทำหน้าที่เป็น salt
+const recipientHash = (name, certId) => ethers.keccak256(ethers.toUtf8Bytes(normName(name) + '|' + certId.trim()));
+
+// --- 1. course ---
+$('btnCourse').onclick = async () => {
+  try {
+    const c = getContract(true);
+    const tx = await c.createCourse($('cCode').value.trim(), $('cName').value.trim(), $('cDesc').value.trim(), Number($('cHours').value || 0));
+    toast('⏳ กำลังส่งธุรกรรม… ' + tx.hash); await tx.wait(); toast('✅ สร้างหลักสูตรเรียบร้อย'); loadCourses();
+  } catch (e) { toast('❌ ' + errMsg(e)); }
+};
+async function loadCourses() {
+  const c = getContract();
+  const codes = await c.getAllCourseCodes();
+  const list = await Promise.all(codes.map(x => c.getCourse(x)));
+  $('iCourse').innerHTML = '<option value="">— เลือกหลักสูตร —</option>' + list.filter(x => x.active).map(x => `<option value="${esc(x.courseCode)}">${esc(x.courseCode)} · ${esc(x.courseName)}</option>`).join('');
+  $('cList').innerHTML = list.length ? `<table><tr><th>รหัส</th><th>ชื่อหลักสูตร</th><th>รายละเอียด</th><th>ชม.</th><th>สถานะ</th></tr>` +
+    list.map(x => `<tr><td>${esc(x.courseCode)}</td><td>${esc(x.courseName)}</td><td>${esc(x.description)}</td><td>${x.durationHours}</td><td>${x.active ? '<span class="badge b-ok">เปิด</span>' : '<span class="badge b-warn">ปิด</span>'}</td></tr>`).join('') + '</table>' : 'ยังไม่มีหลักสูตร';
+}
+$('btnListCourses').onclick = $('btnLoadCourses').onclick = () => loadCourses().catch(e => toast('❌ ' + errMsg(e)));
+
+$('btnIssuer').onclick = async () => {
+  try {
+    const c = getContract(true);
+    const tx = await c.setIssuer($('aWallet').value.trim(), $('aEnable').value === 'true');
+    toast('⏳ ' + tx.hash); await tx.wait(); toast('✅ บันทึกสิทธิ์แล้ว');
+  } catch (e) { toast('❌ ' + errMsg(e)); }
+};
+
+// --- 2+3. issue ---
+function verifyUrl(certId) {
+  const u = new URL(location.href.split('?')[0]);
+  u.searchParams.set('contract', $('contractAddr').value.trim());
+  u.searchParams.set('cert', certId);
+  return u.toString();
+}
+$('btnIssue').onclick = async () => {
+  try {
+    const id = $('iId').value.trim(), course = $('iCourse').value, name = $('iName').value, wallet = $('iWallet').value.trim();
+    if (!id || !course || !name.trim()) throw new Error('กรอกรหัสใบรับรอง หลักสูตร และชื่อผู้รับให้ครบ');
+    if (!ethers.isAddress(wallet)) throw new Error('Wallet ผู้รับไม่ถูกต้อง');
+    const docHash = await fileHash($('iFile')); if (!docHash) throw new Error('กรุณาแนบไฟล์ PDF');
+    const c = getContract(true);
+    const tx = await c.issueCertificate(id, course, wallet, recipientHash(name, id), docHash);
+    toast('⏳ กำลังบันทึกบน Blockchain… ' + tx.hash); await tx.wait();
+    const url = verifyUrl(id);
+    $('iResult').innerHTML = `<div class="badge b-ok">ออกใบรับรองสำเร็จ</div>
+      <div class="qrbox"><div id="qr"></div><div><div><b>รหัส:</b> ${esc(id)}</div><div class="mono"><b>Document hash:</b> ${docHash}</div>
+      <div class="mono"><b>Tx:</b> ${tx.hash}</div><div class="mono"><b>ลิงก์ตรวจสอบ:</b> ${esc(url)}</div>
+      <p class="hint">นำ QR นี้ไปพิมพ์ลงบนใบรับรองฉบับที่แจกจริง (หรือส่งให้ผู้รับพร้อมไฟล์ PDF ที่ใช้คำนวณ Hash)</p></div></div>`;
+    new QRCode($('qr'), { text: url, width: 160, height: 160 });
+  } catch (e) { toast('❌ ' + errMsg(e)); }
+};
+
+// --- 4. verify ---
+async function doVerify() {
+  const out = $('vResult');
+  try {
+    const id = $('vId').value.trim(); if (!id) throw new Error('กรุณาใส่รหัสใบรับรอง');
+    const c = getContract();
+    out.textContent = 'กำลังตรวจสอบ…';
+    const [status, cert, course] = await c.verifyCertificate(id);
+    const s = Number(status);
+    if (s === 0) { out.innerHTML = `<span class="badge b-bad">❌ ไม่พบใบรับรองรหัสนี้ในระบบ – อาจเป็นเอกสารปลอม</span>`; return; }
+    let docRow = '', nameRow = '';
+    const dh = await fileHash($('vFile'));
+    if (dh) {
+      const [match] = await c.verifyDocument(id, dh);
+      docRow = `<tr><th>ไฟล์ PDF</th><td>${match ? '<span class="badge b-ok">ตรงกับต้นฉบับ – ไม่ถูกแก้ไข</span>' : '<span class="badge b-bad">ไม่ตรงกับต้นฉบับ – ไฟล์ถูกแก้ไข</span>'}</td></tr>`;
+    }
+    if ($('vName').value.trim()) {
+      const ok = await c.verifyRecipient(id, recipientHash($('vName').value, id));
+      nameRow = `<tr><th>ชื่อผู้รับ</th><td>${ok ? '<span class="badge b-ok">ตรงกับที่บันทึกไว้</span>' : '<span class="badge b-bad">ไม่ตรง</span>'}</td></tr>`;
+    }
+    out.innerHTML = `<p><span class="badge ${s === 1 ? 'b-ok' : 'b-bad'}">${s === 1 ? '✅' : '⛔'} ${STATUS[s]}</span></p>
+      <table>
+        <tr><th>รหัสใบรับรอง</th><td>${esc(cert.certId)}</td></tr>
+        <tr><th>หลักสูตร</th><td>${esc(course.courseCode)} · ${esc(course.courseName)} (${course.durationHours} ชม.)</td></tr>
+        <tr><th>วันที่ออก</th><td>${fmtDate(cert.issuedAt)}</td></tr>
+        <tr><th>Wallet ผู้รับ</th><td class="mono">${cert.recipient}</td></tr>
+        <tr><th>ผู้ออก</th><td class="mono">${cert.issuer}</td></tr>
+        <tr><th>Document hash</th><td class="mono">${cert.documentHash}</td></tr>
+        ${cert.revoked ? `<tr><th>เพิกถอนเมื่อ</th><td>${fmtDate(cert.revokedAt)} – ${esc(cert.revokeReason)}</td></tr>` : ''}
+        ${docRow}${nameRow}
+      </table>`;
+  } catch (e) { out.innerHTML = ''; toast('❌ ' + errMsg(e)); }
+}
+$('btnVerify').onclick = doVerify;
+
+let scanner;
+$('btnScan').onclick = async () => {
+  try {
+    if (scanner) { await scanner.stop(); scanner = null; $('btnScan').textContent = 'สแกน QR Code'; return; }
+    scanner = new Html5Qrcode('reader');
+    $('btnScan').textContent = 'หยุดสแกน';
+    await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 220 }, async text => {
+      await scanner.stop(); scanner = null; $('btnScan').textContent = 'สแกน QR Code';
+      try { const u = new URL(text); $('vId').value = u.searchParams.get('cert') || text; if (u.searchParams.get('contract')) $('contractAddr').value = u.searchParams.get('contract'); }
+      catch { $('vId').value = text; }
+      doVerify();
+    });
+  } catch (e) { scanner = null; $('btnScan').textContent = 'สแกน QR Code'; toast('❌ เปิดกล้องไม่ได้: ' + errMsg(e)); }
+};
+
+// --- 5. revoke ---
+$('btnRevoke').onclick = async () => {
+  try {
+    const c = getContract(true);
+    const tx = await c.revokeCertificate($('rId').value.trim(), $('rReason').value.trim());
+    toast('⏳ ' + tx.hash); await tx.wait(); toast('✅ เพิกถอนใบรับรองแล้ว (ประวัติยังอยู่ครบ)');
+  } catch (e) { toast('❌ ' + errMsg(e)); }
+};
+
+// --- 6. dashboard ---
+$('btnDash').onclick = async () => {
+  try {
+    const c = getContract(true);
+    const list = await c.getCertificatesOf(account);
+    if (!list.length) { $('dResult').textContent = 'ยังไม่มีใบรับรองที่ผูกกับ Wallet นี้'; return; }
+    const courses = {};
+    for (const x of list) if (!courses[x.courseCode]) courses[x.courseCode] = await c.getCourse(x.courseCode);
+    $('dResult').innerHTML = `<table><tr><th>รหัส</th><th>หลักสูตร</th><th>วันที่ออก</th><th>สถานะ</th><th>QR</th></tr>` +
+      list.map((x, i) => `<tr><td>${esc(x.certId)}</td><td>${esc(courses[x.courseCode].courseName)}</td><td>${fmtDate(x.issuedAt)}</td>
+        <td>${x.revoked ? `<span class="badge b-bad">เพิกถอน</span><br><small>${esc(x.revokeReason)}</small>` : '<span class="badge b-ok">Valid</span>'}</td>
+        <td><div id="dq${i}"></div></td></tr>`).join('') + '</table>';
+    list.forEach((x, i) => new QRCode($('dq' + i), { text: verifyUrl(x.certId), width: 84, height: 84 }));
+  } catch (e) { toast('❌ ' + errMsg(e)); }
+};
+
+// auto-verify when opened from a QR link
+if (params.get('cert')) { $('vId').value = params.get('cert'); window.addEventListener('load', () => setTimeout(doVerify, 300)); }
+</script>
+</body>
+</html>
